@@ -1,0 +1,7 @@
+<notes>
+	<note>
+		<ename>Sanju</ename>
+		<enote>this is a sample app</enote>
+		<country>Aus</country>
+	</note>
+</notes>

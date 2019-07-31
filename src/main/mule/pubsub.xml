@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:aggregators="http://www.mulesoft.org/schema/mule/aggregators" xmlns:xml-module="http://www.mulesoft.org/schema/mule/xml-module" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/aggregators http://www.mulesoft.org/schema/mule/aggregators/current/mule-aggregators.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="6452cb31-a7a7-4df1-ae7e-d28e2e0c94fa" >
+		<http:listener-connection host="0.0.0.0" port="${http.port}" />
+	</http:listener-config>
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="5fa6bdb3-8fa9-4048-a54d-a595cba56bd0" >
+		<vm:queues >
+			<vm:queue queueName="myownpubsub" maxOutstandingMessages="100" queueType="PERSISTENT"/>
+		</vm:queues>
+	</vm:config>
+	<global-property doc:name="Global Property" doc:id="fe848d67-07fe-440b-8ea6-d430d7af1720" name="env" value="dev" />
+	<configuration-properties doc:name="Configuration properties" doc:id="9a4dff9e-16ea-4636-9be2-6e4710a21860" file="${env}/properties.yaml" />
+	<flow name="pubsubFlow" doc:id="4899c733-c783-4f69-8bf7-4795185faf0e" >
+		<http:listener doc:name="Listener" doc:id="df8c1870-570a-42e5-84ad-7c2279ca9350" config-ref="HTTP_Listener_config" path="publish"/>
+		<logger level="INFO" doc:name="Logger" doc:id="2bc60b70-b8bc-4cd7-add2-7c015b459738" message="received #[payload.ename]"/>
+		<vm:publish-consume doc:name="Publish consume" doc:id="956de58f-fc87-4491-8fa0-d3e3cd988256" config-ref="VM_Config" queueName="myownpubsub" correlationId="#[( payload.ename )]" sendCorrelationId="ALWAYS"/>
+	</flow>
+	<flow name="pubsubFlow1" doc:id="d8d41e25-2b17-43e7-b9c5-75203eab9a9e" >
+		<aggregators:aggregator-listener doc:name="Aggregator listener" doc:id="0c14120a-dd17-4055-beee-72cf9203b1b6" aggregatorName="namebased" includeTimedOutGroups="true"/>
+		<logger level="INFO" doc:name="Logger" doc:id="820799a3-5954-4847-b23d-e8833e45e6d5" message="#[payload]"/>
+	</flow>
+	<flow name="Copy_of_subscriberFlow" doc:id="bece03c3-e712-4256-b151-4bdc593d6488">
+		<vm:listener queueName="myownpubsub" doc:name="VM-Listener" doc:id="5dacc3c7-c44b-401a-829b-adc4044e90b4" config-ref="VM_Config" numberOfConsumers="2" transactionalAction="ALWAYS_BEGIN" />
+		<logger level="INFO" doc:name="Copy_of_Logger" doc:id="7b5778b2-a2e6-466f-853c-f44b90b9a601" message="received from VM  #[payload.ename]" />
+		<ee:transform doc:name="Transform Message" doc:id="f605b19d-f126-4d38-8f38-9d40d72c6567">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<aggregators:group-based-aggregator doc:name="Group based aggregator" doc:id="099139a9-c3b9-47de-96e9-c5841b362c49" groupId="#[output application/java
+---
+( payload.ename )]" name="namebased" groupSize="3" evictionTime="0" timeout="1" evictionTimeUnit="NANOSECONDS" timeoutUnit="DAYS">
+				
+				<aggregators:incremental-aggregation>
+				<logger level="INFO" doc:name="Logger" doc:id="2ed8ed5d-2832-4be7-b12b-492cf45d845a" message="Incremental aggregation" />
+				<ee:transform doc:name="Transform Message" doc:id="f66accaf-a10b-431e-987e-4676796f0ed1">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status" : "added to the group" 
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</aggregators:incremental-aggregation>
+			<aggregators:aggregation-complete>
+				<ee:transform doc:name="Transform Message" doc:id="d811468e-901e-45d2-97df-3eafa1817fd0">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	Personal : payload[0],
+	Hospital : payload[1],
+	reason : payload[2]
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="4f1677bb-d142-400f-b3df-69ea9e7ec54e" message="#[payload]" />
+				</aggregators:aggregation-complete>
+			</aggregators:group-based-aggregator>
+	</flow>
+
+</mule>
